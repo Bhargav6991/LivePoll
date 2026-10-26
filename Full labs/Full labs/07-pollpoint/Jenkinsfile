@@ -1,0 +1,50 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = "pollpoint"
+        IMAGE_TAG = "1.0.1"
+        CONTAINER_NAME = "pollpoint2"
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+            }
+        }
+
+        stage('Deploy Container') {
+            steps {
+                script {
+                    // Stop and remove existing container if it exists
+                    sh "docker stop ${CONTAINER_NAME} || true"
+                    sh "docker rm ${CONTAINER_NAME} || true"
+
+                    // Run the new container with your persistent volume and public IP/URL config
+                    sh """
+                    docker run -d -p 8000:8000 --name ${CONTAINER_NAME} \
+                      -v pollpoint-data:/data \
+                      -e PUBLIC_URL=http://13.48.24.126:8000 \
+                      ${IMAGE_NAME}:${IMAGE_TAG}
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Pipeline completed successfully! App is deployed.'
+        }
+        failure {
+            echo 'Pipeline failed. Check logs for details.'
+        }
+    }
+}
