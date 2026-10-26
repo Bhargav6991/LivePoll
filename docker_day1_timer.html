@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docker Day 1 – Session Timer</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--tx:#14213d;--mu:#5c677d;--ac:#2563eb;--ok:#15803d;--warn:#b45309;--bad:#dc2626;--bd:#e2e5ea;--lab:#0e7490;--brk:#7c3aed}
+@media (prefers-color-scheme: dark){:root{--bg:#0f172a;--card:#1e293b;--tx:#f1f5f9;--mu:#94a3b8;--ac:#60a5fa;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171;--bd:#334155;--lab:#22d3ee;--brk:#c4b5fd}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-columns:1.5fr 1fr;gap:20px}
+@media (max-width:820px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:22px}
+.tag{display:inline-block;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border-radius:99px;border:1px solid currentColor}
+.t-teach{color:var(--ac)}.t-lab{color:var(--lab)}.t-break{color:var(--brk)}
+h1{font-size:clamp(24px,3.6vw,38px);margin:14px 0 6px;line-height:1.2}
+.info{color:var(--mu);font-size:16px;min-height:22px}
+.clock{font-size:clamp(70px,14vw,150px);font-weight:800;font-variant-numeric:tabular-nums;line-height:1;margin:18px 0 6px}
+.clock.warn{color:var(--warn)}.clock.over{color:var(--bad)}
+.sub{color:var(--mu);font-size:15px}
+.bar{height:12px;background:var(--bd);border-radius:99px;overflow:hidden;margin:16px 0}
+.bar i{display:block;height:100%;width:0;background:var(--ac);transition:width .3s}
+.sched{font-weight:700;font-size:17px;margin:4px 0 0}
+.ahead{color:var(--ok)}.behind{color:var(--bad)}
+.btns{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+button{font:inherit;font-weight:700;font-size:17px;padding:12px 22px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--tx);cursor:pointer}
+button.main{background:var(--ac);border-color:var(--ac);color:#fff;font-size:20px;padding:14px 34px}
+button:hover{filter:brightness(.95)}
+.nextup{margin-top:16px;padding-top:14px;border-top:1px solid var(--bd);color:var(--mu)}
+.nextup b{color:var(--tx)}
+.list{max-height:78vh;overflow:auto;padding:8px}
+.row{display:grid;grid-template-columns:96px 1fr 44px;gap:8px;align-items:center;padding:9px 10px;border-radius:8px;cursor:pointer;font-size:14px}
+.row:hover{background:var(--bd)}
+.row .tm{color:var(--mu);font-variant-numeric:tabular-nums}
+.row .mn{color:var(--mu);text-align:right}
+.row.done{opacity:.45;text-decoration:line-through}
+.row.cur{background:var(--ac);color:#fff}
+.row.cur .tm,.row.cur .mn{color:#fff}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px}
+.d-teach{background:var(--ac)}.d-lab{background:var(--lab)}.d-break{background:var(--brk)}
+.hint{color:var(--mu);font-size:13px;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <span id="tag" class="tag t-teach">Ready</span>
+    <h1 id="name">Docker Day 1</h1>
+    <div id="info" class="info"></div>
+    <div id="clock" class="clock">00:00</div>
+    <div id="sub" class="sub"></div>
+    <div class="bar"><i id="fill"></i></div>
+    <div id="sched" class="sched"></div>
+    <div class="btns">
+      <button id="bNext" class="main">▶ Start day</button>
+      <button id="bPrev">◀ Previous</button>
+      <button id="bPause">⏸ Pause</button>
+      <button id="bFull">⛶ Full screen</button>
+      <button id="bReset">↺ Reset</button>
+    </div>
+    <div id="nextup" class="nextup"></div>
+    <div class="hint">Shortcuts: → or N = next topic · ← = previous · P = pause/resume · F = full screen. Click any topic on the right to jump to it. Finishing a topic early moves you to the next one at once, and the saved time shows as “ahead of plan”.</div>
+  </div>
+  <div class="card list" id="list"></div>
+</div>
+
+<script>
+// name, minutes, type (teach | lab | break), details
+var T = [
+  ["Welcome, about me, poll, roadmap, outcomes", 30, "teach", "Slides 1–5"],
+  ["Why containers? Problems, evolution, road to Docker", 20, "teach", "Slides 6–10"],
+  ["Containers vs VMs: kernel, analogy, comparison", 25, "teach", "Slides 11–16"],
+  ["Lab: shared kernel and fast start", 10, "lab", "Script section 1"],
+  ["Tea break", 15, "break", "Back on time please"],
+  ["Docker fundamentals: platform, architecture, terms", 30, "teach", "Slides 17–25 · daemon vote on slide 22"],
+  ["Lab: CLI, hello-world, volume, network", 25, "lab", "Script section 2"],
+  ["Lunch break", 45, "break", "Back on time please"],
+  ["Container lifecycle: five states and commands", 15, "teach", "Slides 26–29"],
+  ["Lab: nginx through every state", 35, "lab", "Script section 3"],
+  ["Git and GitHub: architecture, workflow, branches", 25, "teach", "Slides 38–43"],
+  ["Lab: clone, lab files, commit, branch, undo", 40, "lab", "Script section 4"],
+  ["Tea break", 15, "break", "Back on time please"],
+  ["Docker images: layers, Dockerfile, commit, fun lab", 15, "teach", "Slides 30–37"],
+  ["Lab: build, tag, commit, 4 fun labs", 65, "lab", "Script section 5"],
+  ["Image optimization: slim, cache, multi-stage", 15, "teach", "Slides 44–48"],
+  ["Lab: fat vs slim, cache, multi-stage Go", 35, "lab", "Script section 6"],
+  ["Wrap-up: takeaways, knowledge check, Q&A", 20, "teach", "Slides 49–51 · Script section 7"]
+];
+var TOTAL = T.reduce(function(a, t){ return a + t[1]; }, 0);
+var BASE = 10 * 60;            // schedule clock starts at 10:00 (minutes)
+var KEY = "dockerDay1Timer";
+var S = { started:false, done:false, idx:0, paused:false, endAt:0, remMs:T[0][1]*60000, dayStart:0 };
+var beeped = false;
+
+function $(id){ return document.getElementById(id); }
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }
+function load(){ try { var s = localStorage.getItem(KEY); if(s){ var o = JSON.parse(s); if(o && typeof o.idx === "number" && o.idx < T.length) S = o; } } catch(e){} }
+function hhmm(m){ var h = Math.floor(m/60) % 24, mm = m % 60; return (h<10?"0":"")+h+":"+(mm<10?"0":"")+mm; }
+function fmt(ms){
+  var neg = ms < 0, s = Math.ceil(Math.abs(ms)/1000), m = Math.floor(s/60), r = s % 60;
+  return (neg?"+":"") + (m<10?"0":"") + m + ":" + (r<10?"0":"") + r;
+}
+function remaining(){ return S.paused || !S.started ? S.remMs : S.endAt - Date.now(); }
+
+function setTopic(i){
+  S.idx = i; S.done = false; S.remMs = T[i][1]*60000; S.endAt = Date.now() + S.remMs; S.paused = false; beeped = false; save(); render();
+}
+function startDay(){ S.started = true; S.dayStart = Date.now(); setTopic(0); }
+function next(){
+  if(!S.started){ startDay(); return; }
+  if(S.done) return;
+  if(S.idx < T.length - 1) setTopic(S.idx + 1);
+  else { S.done = true; S.paused = true; S.remMs = 0; save(); render(); }
+}
+function prev(){ if(S.started && S.idx > 0){ setTopic(S.idx - 1); } }
+function togglePause(){
+  if(!S.started || S.done) return;
+  if(S.paused){ S.endAt = Date.now() + S.remMs; S.paused = false; }
+  else { S.remMs = S.endAt - Date.now(); S.paused = true; }
+  save(); render();
+}
+function reset(){
+  if(!confirm("Reset the timer to the start of the day?")) return;
+  S = { started:false, done:false, idx:0, paused:false, endAt:0, remMs:T[0][1]*60000, dayStart:0 }; beeped = false; save(); render();
+}
+function beep(){
+  try {
+    var c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(), g = c.createGain();
+    o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.value = 0.15;
+    o.start(); setTimeout(function(){ o.stop(); c.close(); }, 600);
+  } catch(e){}
+}
+function fullscreen(){
+  try { if(document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch(e){}
+}
+
+function buildList(){
+  var m = BASE, html = "";
+  T.forEach(function(t, i){
+    html += '<div class="row" data-i="'+i+'"><span class="tm">'+hhmm(m)+'–'+hhmm(m+t[1])+'</span>' +
+            '<span><span class="dot d-'+t[2]+'"></span>'+t[0]+'</span><span class="mn">'+t[1]+'m</span></div>';
+    m += t[1];
+  });
+  $("list").innerHTML = html;
+  Array.prototype.forEach.call(document.querySelectorAll(".row"), function(r){
+    r.onclick = function(){
+      var i = +r.getAttribute("data-i");
+      if(!S.started){ S.started = true; S.dayStart = Date.now(); }
+      setTopic(i);
+    };
+  });
+}
+
+function render(){
+  var t = T[S.idx], rem = remaining();
+  var tagNames = { teach:"Explain", lab:"Hands-on lab", break:"Break" };
+  $("tag").className = "tag t-" + t[2];
+  $("tag").textContent = S.done ? "Finished" : (S.started ? tagNames[t[2]] : "Ready to start");
+  $("name").textContent = S.done ? "Day 1 complete. Thank you!" : t[0];
+  $("info").textContent = S.done ? "" : "Topic " + (S.idx+1) + " of " + T.length + " · " + t[3] + " · planned " + t[1] + " min";
+  var clock = $("clock");
+  clock.textContent = S.done ? "00:00" : fmt(rem);
+  clock.className = "clock" + (!S.done && rem < 0 ? " over" : (!S.done && rem < 120000 && S.started ? " warn" : ""));
+  $("sub").textContent = S.done ? "" : (rem < 0 ? "Over time. Wrap up and move on." : (S.paused && S.started ? "Paused" : "remaining in this topic"));
+  var pct = S.done ? 100 : Math.max(0, Math.min(100, 100 - (rem / (t[1]*60000)) * 100));
+  $("fill").style.width = pct + "%";
+  $("fill").style.background = rem < 0 ? "var(--bad)" : "var(--ac)";
+
+  var sch = $("sched");
+  if(S.started && !S.done){
+    var after = 0; for(var i = S.idx + 1; i < T.length; i++) after += T[i][1];
+    var proj = Date.now() + Math.max(rem, 0) + after*60000;
+    var diff = Math.round((S.dayStart + TOTAL*60000 - proj) / 60000);
+    if(Math.abs(diff) < 1){ sch.textContent = "On schedule"; sch.className = "sched"; }
+    else if(diff > 0){ sch.textContent = "Ahead of plan by " + diff + " min (projected finish " + hhmm(Math.floor((new Date(proj).getHours()*60 + new Date(proj).getMinutes()))) + ")"; sch.className = "sched ahead"; }
+    else { sch.textContent = "Behind plan by " + (-diff) + " min (projected finish " + hhmm(new Date(proj).getHours()*60 + new Date(proj).getMinutes()) + ")"; sch.className = "sched behind"; }
+  } else { sch.textContent = ""; }
+
+  $("bNext").textContent = !S.started ? "▶ Start day" : (S.idx === T.length - 1 ? "✔ Finish day" : "Next topic ▶");
+  $("bNext").disabled = S.done;
+  $("bPause").textContent = S.paused ? "▶ Resume" : "⏸ Pause";
+  $("nextup").innerHTML = S.done ? "" : (S.idx < T.length - 1 ? "Next up: <b>" + T[S.idx+1][0] + "</b> (" + T[S.idx+1][1] + " min)" : "This is the last topic of the day.");
+
+  Array.prototype.forEach.call(document.querySelectorAll(".row"), function(r, i){
+    r.className = "row" + (S.started && (i < S.idx || S.done) ? " done" : "") + (S.started && !S.done && i === S.idx ? " cur" : "");
+  });
+  document.title = (S.started && !S.done ? fmt(rem) + " · " : "") + "Docker Day 1 Timer";
+}
+
+function tick(){
+  if(S.started && !S.paused && !S.done){
+    if(S.endAt - Date.now() < 0 && !beeped){ beeped = true; beep(); }
+    render();
+  }
+}
+
+$("bNext").onclick = next; $("bPrev").onclick = prev; $("bPause").onclick = togglePause;
+$("bFull").onclick = fullscreen; $("bReset").onclick = reset;
+document.addEventListener("keydown", function(e){
+  var k = e.key.toLowerCase();
+  if(k === "arrowright" || k === "n") next();
+  else if(k === "arrowleft") prev();
+  else if(k === "p") togglePause();
+  else if(k === "f") fullscreen();
+});
+
+load(); buildList(); render(); setInterval(tick, 250);
+</script>
+</body>
+</html>
